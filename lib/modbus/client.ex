@@ -153,7 +153,9 @@ defmodule Modbus.Client do
   @doc """
   Whether the client is connected: `:connected`, `:connecting`, or `{:disconnected, reason}` with
   the reason it last couldn't connect or lost its connection, such as `:econnrefused`. A serial
-  client is connected while its port is open.
+  client is connected while its port is open. On a pty, which cannot do parity or 7 bit characters,
+  asking for them works once and then fails with `:pty_line_settings`: give `parity: :none` (and
+  `data_bits: 8` for ASCII).
   """
   @spec status(GenServer.server()) :: :connected | :connecting | {:disconnected, term}
   def status(client), do: GenServer.call(client, :status)

@@ -140,11 +140,12 @@ defmodule Modbus.SerialTest do
   end
 
   test "an adapter's echo is never taken for the device's answer" do
-    {a, b} = Pty.pair()
-    {:ok, device} = Circuits.UART.start_link()
-    :ok = Circuits.UART.open(device, b, speed: 19200, active: true)
-
     for echo <- [true, false] do
+      # A pty of its own each time: Linux does no parity on a pty, so setting even parity on one that
+      # has been set before changes nothing, and tcsetattr then fails with EINVAL.
+      {a, b} = Pty.pair()
+      {:ok, device} = Circuits.UART.start_link()
+      :ok = Circuits.UART.open(device, b, speed: 19200, active: true)
       id = make_ref()
       client = start_supervised!({Client, rtu: a, echo: echo, timeout: 300}, id: id)
       # the adapter echoes the request, and the device is dead
@@ -154,6 +155,30 @@ defmodule Modbus.SerialTest do
       if echo, do: assert(result == {:error, :timeout}), else: assert(result == :ok)
       stop_supervised!(id)
     end
+  end
+
+  test "a pty that was set up before says it cannot do parity, by its link as well" do
+    {a, _b} = Pty.pair()
+    link = Path.join(System.tmp_dir!(), "yamodbus_pty_#{System.unique_integer([:positive])}")
+    :ok = File.ln_s(a, link)
+    on_exit(fn -> File.rm(link) end)
+
+    start = fn path, opts ->
+      id = make_ref()
+      client = start_supervised!({Client, [rtu: path, timeout: 300] ++ opts}, id: id)
+      {id, settled(client)}
+    end
+
+    {id, status} = start.(a, [])
+    assert status == :connected
+    stop_supervised!(id)
+
+    {id, status} = start.(link, [])
+    assert status == {:disconnected, :pty_line_settings}
+    stop_supervised!(id)
+
+    {_id, status} = start.(link, parity: :none)
+    assert status == :connected
   end
 
   test "an adapter's echo, then the device's answer" do
@@ -218,6 +243,17 @@ defmodule Modbus.SerialTest do
     client = start_supervised!({Client, rtu: "/dev/no_such_tty", backoff: {50, 50}})
     assert Client.read_holding_registers(client, 1, 0, 1) == {:error, :closed}
     assert {:disconnected, _reason} = Client.status(client)
+  end
+
+  defp settled(client, tries \\ 100) do
+    case Client.status(client) do
+      :connecting when tries > 0 ->
+        Process.sleep(20)
+        settled(client, tries - 1)
+
+      status ->
+        status
+    end
   end
 
   defp receive_until(uart, delimiter, buffer \\ <<>>) do

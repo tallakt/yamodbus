@@ -22,17 +22,35 @@ defmodule Modbus.Serial do
         id: :pid
       ]
 
-      opened(uart, call(fn -> Circuits.UART.open(uart, device, options) end))
+      opened(uart, call(fn -> Circuits.UART.open(uart, device, options) end), device, config)
     else
       {:error, :circuits_uart_missing}
     end
   end
 
-  defp opened(uart, :ok), do: {:ok, uart}
+  defp opened(uart, :ok, _device, _config), do: {:ok, uart}
 
-  defp opened(uart, {:error, reason}) do
+  defp opened(uart, {:error, reason}, device, config) do
     close(uart)
-    {:error, reason}
+    {:error, if(pty_refused?(reason, device, config), do: :pty_line_settings, else: reason)}
+  end
+
+  # Linux does no parity and no 7 bit characters on a pty, such as a socat or virtual serial line, and
+  # tcsetattr fails with EINVAL once they have been asked for before, however the open got that far.
+  defp pty_refused?(:einval, device, config),
+    do: pty?(device) and (config.parity != :none or config.data_bits != 8)
+
+  defp pty_refused?(_reason, _device, _config), do: false
+
+  defp pty?(device), do: String.starts_with?(real_path(device, 8), "/dev/pts/")
+
+  defp real_path(path, 0), do: path
+
+  defp real_path(path, hops) do
+    case File.read_link(path) do
+      {:ok, target} -> real_path(Path.expand(target, Path.dirname(path)), hops - 1)
+      {:error, _reason} -> path
+    end
   end
 
   def write(uart, data), do: call(fn -> Circuits.UART.write(uart, data) end)
