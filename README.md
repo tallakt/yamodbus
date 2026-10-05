@@ -20,7 +20,8 @@ numbering are the application's business.
 
 **Status:** clients and servers on TCP, TLS, RTU and ASCII, with every public
 function code of the spec; tested against [pymodbus](https://github.com/pymodbus-dev/pymodbus)
-both ways on every transport. What's left is under [What's missing](#whats-missing).
+both ways on every transport, and against [libmodbus](https://libmodbus.org) both ways on
+TCP and RTU. What's left is under [What's missing](#whats-missing).
 
 ## Client
 
@@ -220,8 +221,8 @@ keep a dead connection open.
   spec, as circuits_uart doesn't report overruns; and its diagnostic register
   is always 0.
 - No RS-485 direction control beyond what the adapter does by itself.
-- Tested against pymodbus only, not against libmodbus, real PLCs or the
-  Modbus Organization's conformance test.
+- Tested against pymodbus and libmodbus, not against real PLCs or the Modbus
+  Organization's conformance test.
 
 ## Tests
 
@@ -236,6 +237,11 @@ without one:
 python3 -m venv ~/.venvs/pymodbus && ~/.venvs/pymodbus/bin/pip install pymodbus pyserial
 PYMODBUS_PYTHON=~/.venvs/pymodbus/bin/python mix test
 ```
+
+The libmodbus tests do the same against a peer in `test/support/libmodbus_peer.c`, built
+when the tests start, over TCP and RTU. They run where pkg-config finds libmodbus
+(`brew install libmodbus`, or `apt install libmodbus-dev`), as separate processes: C only ever
+runs in tests, never inside yamodbus.
 
 The serial line tests join two pseudo-terminals with [socat](http://www.dest-unreach.org/socat/),
 and are skipped where it isn't installed.
